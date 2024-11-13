@@ -1,0 +1,24 @@
+- Module file strucutre:
+	- Block
+	- Controller
+	- Cron
+	- etc
+	- Helper
+	- i18n
+	- Mail
+	- Model
+	- Setup
+	- Ui
+	- View
+
+- XML file types:
+	- module.xml - declare module, dependency and module
+	- db_schema.xml - defines database tables, coumns and indexes
+	- config.xml - default configuration
+	- layout xml file with - defines the structure of page
+	- routes.xml - frontend and backend route
+	- events.xml - defines observers for specific areas
+	- acl.xml - defines permissions of module actions
+	- cron.xml - defines scheduled cron jobs
+	- webapi.xml - defines rest and soap api
+	- di.xml - defiens depedency injection
