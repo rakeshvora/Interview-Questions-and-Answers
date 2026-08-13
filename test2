@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>URL Security Checker</title>
+
+    <style>
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 30px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .upload-box {
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        input[type="file"] {
+            padding: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th,
+        td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+
+        th {
+            background: #343a40;
+            color: white;
+        }
+
+        .valid {
+            color: green;
+            font-weight: bold;
+        }
+
+        .invalid {
+            color: red;
+            font-weight: bold;
+        }
+
+        .suspicious {
+            color: orange;
+            font-weight: bold;
+        }
+
+        .phishing {
+            color: darkred;
+            font-weight: bold;
+        }
+
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>URL Security Checker</h1>
+
+    <p>
+        Upload an Excel file containing a column named
+        <strong>url</strong>.
+    </p>
+
+    <div class="upload-box">
+
+        <form method="POST"
+              enctype="multipart/form-data">
+
+            <input
+                type="file"
+                name="file"
+                accept=".xlsx,.xls"
+                required
+            >
+
+            <button type="submit">
+                Analyze URLs
+            </button>
+
+        </form>
+
+    </div>
+
+    {% if error %}
+
+        <div class="error">
+            {{ error }}
+        </div>
+
+    {% endif %}
+
+
+    {% if results %}
+
+        <h2>URL Analysis Report</h2>
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Row</th>
+                    <th>URL</th>
+                    <th>Status</th>
+                    <th>Risk</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+            {% for result in results %}
+
+                <tr>
+
+                    <td>
+                        {{ result.Row }}
+                    </td>
+
+                    <td>
+                        {{ result.URL }}
+                    </td>
+
+                    <td class="{{ result.Status.lower() }}">
+                        {{ result.Status }}
+                    </td>
+
+                    <td>
+                        {{ result.Risk }}
+                    </td>
+
+                    <td>
+                        {{ result.Reason }}
+                    </td>
+
+                </tr>
+
+            {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    {% endif %}
+
+</div>
+
+</body>
+</html>
