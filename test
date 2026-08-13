@@ -1,0 +1,340 @@
+import re
+import ipaddress
+from urllib.parse import urlparse
+
+import pandas as pd
+import requests
+from flask import Flask, render_template, request
+
+app = Flask(__name__)
+
+# Maximum Excel file size: 10 MB
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+
+# Request timeout in seconds
+REQUEST_TIMEOUT = 5
+
+
+def is_valid_url_format(url):
+    """
+    Check whether URL has a valid HTTP/HTTPS structure.
+    """
+
+    if not isinstance(url, str):
+        return False
+
+    url = url.strip()
+
+    if not url:
+        return False
+
+    # URL must start with HTTP or HTTPS
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        return False
+
+    try:
+        parsed = urlparse(url)
+
+        if not parsed.hostname:
+            return False
+
+        # Basic hostname validation
+        if " " in parsed.hostname:
+            return False
+
+        return True
+
+    except Exception:
+        return False
+
+
+def is_ip_address(hostname):
+    """
+    Check whether hostname is an IP address.
+    """
+
+    try:
+        ipaddress.ip_address(hostname)
+        return True
+    except ValueError:
+        return False
+
+
+def calculate_suspicious_score(url):
+    """
+    Calculate a basic phishing/suspicious score.
+
+    This is heuristic detection, not a replacement for
+    a commercial threat-intelligence service.
+    """
+
+    score = 0
+    reasons = []
+
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+
+        if not hostname:
+            return 100, ["Invalid hostname"]
+
+        hostname_lower = hostname.lower()
+
+        # 1. IP address instead of domain
+        if is_ip_address(hostname):
+            score += 30
+            reasons.append("Uses IP address instead of domain")
+
+        # 2. Very long URL
+        if len(url) > 150:
+            score += 15
+            reasons.append("Very long URL")
+
+        # 3. Excessive subdomains
+        if hostname.count(".") >= 4:
+            score += 15
+            reasons.append("Too many subdomains")
+
+        # 4. Suspicious characters
+        if "@" in url:
+            score += 30
+            reasons.append("Contains @ symbol")
+
+        # 5. URL contains encoded characters
+        if "%" in url:
+            score += 5
+            reasons.append("Contains encoded characters")
+
+        # 6. Suspicious keywords
+        suspicious_keywords = [
+            "login",
+            "verify",
+            "verification",
+            "secure",
+            "account",
+            "update",
+            "password",
+            "signin",
+            "confirm",
+            "banking",
+            "payment",
+            "wallet",
+            "recover",
+            "security",
+        ]
+
+        found_keywords = [
+            keyword
+            for keyword in suspicious_keywords
+            if keyword in url.lower()
+        ]
+
+        if found_keywords:
+            score += min(len(found_keywords) * 5, 20)
+            reasons.append(
+                "Suspicious keyword: " + ", ".join(found_keywords)
+            )
+
+        # 7. Hyphens in hostname
+        if hostname.count("-") >= 3:
+            score += 10
+            reasons.append("Multiple hyphens in domain")
+
+        # 8. HTTP instead of HTTPS
+        if parsed.scheme.lower() == "http":
+            score += 10
+            reasons.append("Uses HTTP instead of HTTPS")
+
+        return score, reasons
+
+    except Exception:
+        return 100, ["Unable to analyze URL"]
+
+
+def check_url_reachable(url):
+    """
+    Check whether URL can be reached.
+
+    Returns:
+        True  -> reachable
+        False -> not reachable
+        None  -> request error/timeout
+    """
+
+    try:
+        response = requests.head(
+            url,
+            timeout=REQUEST_TIMEOUT,
+            allow_redirects=True,
+            headers={
+                "User-Agent": "URL-Security-Checker/1.0"
+            }
+        )
+
+        # Some servers do not support HEAD.
+        if response.status_code == 405:
+            response = requests.get(
+                url,
+                timeout=REQUEST_TIMEOUT,
+                allow_redirects=True,
+                headers={
+                    "User-Agent": "URL-Security-Checker/1.0"
+                },
+                stream=True
+            )
+
+        return response.status_code < 400
+
+    except requests.RequestException:
+        return False
+
+
+def analyze_url(url):
+    """
+    Main URL analysis function.
+    """
+
+    if not isinstance(url, str):
+        return {
+            "Status": "Invalid",
+            "Risk": "High",
+            "Reason": "URL is not a text value"
+        }
+
+    url = url.strip()
+
+    # Step 1: Validate URL format
+    if not is_valid_url_format(url):
+        return {
+            "Status": "Invalid",
+            "Risk": "High",
+            "Reason": "Invalid URL format"
+        }
+
+    # Step 2: Calculate security score
+    score, reasons = calculate_suspicious_score(url)
+
+    # Step 3: Check URL availability
+    reachable = check_url_reachable(url)
+
+    # Very high score = likely phishing
+    if score >= 50:
+        return {
+            "Status": "Phishing",
+            "Risk": "High",
+            "Reason": "; ".join(reasons)
+        }
+
+    # Medium score = suspicious
+    if score >= 25:
+        return {
+            "Status": "Suspicious",
+            "Risk": "Medium",
+            "Reason": "; ".join(reasons)
+        }
+
+    # URL format is valid but website is unreachable
+    if not reachable:
+        return {
+            "Status": "Invalid",
+            "Risk": "Medium",
+            "Reason": "URL is valid in format but website is unreachable"
+        }
+
+    return {
+        "Status": "Valid",
+        "Risk": "Low",
+        "Reason": "URL format is valid and website is reachable"
+    }
+
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+
+    results = None
+    error = None
+
+    if request.method == "POST":
+
+        if "file" not in request.files:
+            error = "Please select an Excel file."
+            return render_template(
+                "index.html",
+                results=results,
+                error=error
+            )
+
+        file = request.files["file"]
+
+        if file.filename == "":
+            error = "Please select an Excel file."
+            return render_template(
+                "index.html",
+                results=results,
+                error=error
+            )
+
+        # Validate extension
+        if not file.filename.lower().endswith((".xlsx", ".xls")):
+            error = "Only Excel files (.xlsx or .xls) are allowed."
+            return render_template(
+                "index.html",
+                results=results,
+                error=error
+            )
+
+        try:
+            # Read Excel file
+            df = pd.read_excel(file)
+
+            # Normalize column names
+            df.columns = [
+                str(column).strip().lower()
+                for column in df.columns
+            ]
+
+            # Check URL column
+            if "url" not in df.columns:
+                error = "Excel file must contain a column named 'url'."
+
+                return render_template(
+                    "index.html",
+                    results=results,
+                    error=error
+                )
+
+            output = []
+
+            # Analyze every URL
+            for index, row in df.iterrows():
+
+                original_url = row["url"]
+
+                result = analyze_url(original_url)
+
+                output.append({
+                    "Row": index + 2,
+                    "URL": original_url,
+                    "Status": result["Status"],
+                    "Risk": result["Risk"],
+                    "Reason": result["Reason"]
+                })
+
+            results = output
+
+        except Exception as exc:
+            error = f"Unable to process Excel file: {str(exc)}"
+
+    return render_template(
+        "index.html",
+        results=results,
+        error=error
+    )
+
+
+if __name__ == "__main__":
+    app.run(
+        host="127.0.0.1",
+        port=5000,
+        debug=True
+    )
